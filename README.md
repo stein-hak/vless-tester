@@ -12,6 +12,7 @@ A comprehensive Python tool for testing VLESS proxy connections with support for
   - Subscription URL support (base64-encoded)
 - **Automatic Xray Management**: Downloads and installs xray-core automatically
 - **Reliable IP Verification**: Uses multiple IP check services with automatic fallback for robust connectivity testing
+- **Speedtest Integration**: Optional speed testing (download/upload/ping) for each connection using speedtest-cli
 - **Multiple Output Formats**: Human-readable or JSON for automation
 - **Cross-Platform**: Works on Linux, macOS, and Windows
 
@@ -72,6 +73,7 @@ Options:
   --file <file>            File containing VLESS links (any format - txt, json, etc.)
   --subscription <url>     Subscription URL (base64 encoded)
   --link <vless://...>     Single VLESS link to test
+  --speedtest              Run speedtest (download/upload/ping) for each connection
   --json                   Output results in JSON format for machine parsing
   --quiet                  Suppress info messages (useful with --json)
   -h, --help              Show help message
@@ -95,6 +97,18 @@ python vless_tester.py --subscription https://example.com/sub --json --quiet > r
 
 ```bash
 python vless_tester.py --link "vless://542cc7c8-6bf6-41d4-8672-435899129974a@server.example.com:443?encryption=none&security=tls&type=grpc&serviceName=sync#MyGrpcServer"
+```
+
+#### Run speedtest on all servers in subscription
+
+```bash
+python vless_tester.py --subscription https://example.com/sub --speedtest
+```
+
+#### Speedtest with JSON output
+
+```bash
+python vless_tester.py --file servers.txt --speedtest --json --quiet > speedtest_results.json
 ```
 
 ## Supported Protocols
@@ -209,11 +223,50 @@ Server 2                       OK         1.2.3.4         9.10.11.12
       "original_ip": "1.2.3.4",
       "proxy_ip": "5.6.7.8",
       "ip_changed": true,
-      "error": null
+      "error": null,
+      "download_mbps": null,
+      "upload_mbps": null,
+      "ping_ms": null,
+      "speedtest_error": null
     }
   ]
 }
 ```
+
+### Speedtest Output (`--speedtest`)
+
+When `--speedtest` is enabled, the output includes speed metrics:
+
+```
+============================================================
+TEST SUMMARY
+============================================================
+
+Total tests: 3
+Successful: 3
+Failed: 0
+Success rate: 100.0%
+
+Name                           Status   Download     Upload       Ping
+------------------------------------------------------------------------
+Server 1                       OK       125.3 Mbps   45.2 Mbps    28.0 ms
+Server 2                       OK       98.7 Mbps    38.1 Mbps    85.0 ms
+Server 3                       OK       156.2 Mbps   52.8 Mbps    12.0 ms
+```
+
+**JSON with speedtest:**
+```json
+{
+  "name": "Server 1",
+  "success": true,
+  "download_mbps": 125.3,
+  "upload_mbps": 45.2,
+  "ping_ms": 28.0,
+  "speedtest_error": null
+}
+```
+
+**Note**: Speedtest adds approximately 20-30 seconds per server for download and upload testing.
 
 ## How It Works
 

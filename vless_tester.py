@@ -21,6 +21,11 @@ from typing import Dict, Optional, List
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    import speedtest
+except ImportError:
+    speedtest = None
+
 
 @dataclass
 class VLESSConfig:
@@ -203,13 +208,14 @@ class VLESSTester:
         "http://ident.me"
     ]
 
-    def __init__(self, xray_path: str = None, timeout: int = 10, proxy_port: int = 10808, quiet: bool = False):
+    def __init__(self, xray_path: str = None, timeout: int = 10, proxy_port: int = 10808, quiet: bool = False, run_speedtest: bool = False):
         self.xray_path = xray_path
         self.timeout = timeout
         self.proxy_port = proxy_port
         self.xray_process: Optional[subprocess.Popen] = None
         self.config_file: Optional[str] = None
         self.quiet = quiet
+        self.run_speedtest = run_speedtest
 
     def log(self, message: str):
         """Print message unless in quiet mode"""
@@ -256,6 +262,67 @@ class VLESSTester:
         # All services failed
         self.log(f"[ERROR] Failed to get IP through proxy from all services")
         return None
+
+    def run_speedtest_through_proxy(self) -> Dict:
+        """Run speedtest through the proxy"""
+        result = {
+            "download_mbps": None,
+            "upload_mbps": None,
+            "ping_ms": None,
+            "speedtest_error": None
+        }
+
+        if speedtest is None:
+            result["speedtest_error"] = "speedtest-cli not installed"
+            self.log("[WARNING] speedtest-cli not installed, skipping speedtest")
+            return result
+
+        try:
+            self.log("[INFO] Running speedtest through proxy...")
+
+            # Configure speedtest to use proxy
+            os.environ['http_proxy'] = f'socks5://127.0.0.1:{self.proxy_port}'
+            os.environ['https_proxy'] = f'socks5://127.0.0.1:{self.proxy_port}'
+
+            # Create speedtest client
+            st = speedtest.Speedtest()
+
+            # Get best server based on ping
+            self.log("[INFO] Finding best server...")
+            st.get_best_server()
+
+            # Run download test
+            self.log("[INFO] Testing download speed...")
+            download_bps = st.download()
+            result["download_mbps"] = round(download_bps / 1_000_000, 2)
+
+            # Run upload test
+            self.log("[INFO] Testing upload speed...")
+            upload_bps = st.upload()
+            result["upload_mbps"] = round(upload_bps / 1_000_000, 2)
+
+            # Get ping
+            result["ping_ms"] = round(st.results.ping, 2)
+
+            self.log(f"[INFO] Speedtest results: ↓ {result['download_mbps']} Mbps, ↑ {result['upload_mbps']} Mbps, Ping: {result['ping_ms']} ms")
+
+            # Clean up proxy env vars
+            if 'http_proxy' in os.environ:
+                del os.environ['http_proxy']
+            if 'https_proxy' in os.environ:
+                del os.environ['https_proxy']
+
+        except Exception as e:
+            result["speedtest_error"] = str(e)
+            self.log(f"[ERROR] Speedtest failed: {e}")
+
+            # Clean up proxy env vars on error
+            if 'http_proxy' in os.environ:
+                del os.environ['http_proxy']
+            if 'https_proxy' in os.environ:
+                del os.environ['https_proxy']
+
+        return result
 
     def create_xray_config(self, vless_config: VLESSConfig) -> Dict:
         """Create xray configuration for VLESS connection"""
@@ -441,7 +508,11 @@ class VLESSTester:
             "original_ip": None,
             "proxy_ip": None,
             "ip_changed": False,
-            "error": None
+            "error": None,
+            "download_mbps": None,
+            "upload_mbps": None,
+            "ping_ms": None,
+            "speedtest_error": None
         }
 
         self.log(f"\n{'='*60}")
@@ -477,6 +548,14 @@ class VLESSTester:
 
             if result["ip_changed"]:
                 self.log(f"[SUCCESS] IP changed: {original_ip} -> {proxy_ip}")
+
+                # Run speedtest if requested
+                if self.run_speedtest:
+                    speedtest_result = self.run_speedtest_through_proxy()
+                    result["download_mbps"] = speedtest_result["download_mbps"]
+                    result["upload_mbps"] = speedtest_result["upload_mbps"]
+                    result["ping_ms"] = speedtest_result["ping_ms"]
+                    result["speedtest_error"] = speedtest_result["speedtest_error"]
             else:
                 self.log(f"[WARNING] IP did not change (still {original_ip})")
 
@@ -526,18 +605,41 @@ class VLESSTester:
         print(f"Failed: {total - successful}")
         print(f"Success rate: {successful/total*100:.1f}%")
 
-        print(f"\n{'Name':<30} {'Status':<10} {'Original IP':<15} {'Proxy IP':<15}")
-        print("-" * 70)
+        # Check if any results have speedtest data
+        has_speedtest = any(r.get("download_mbps") is not None for r in results)
 
-        for result in results:
-            status = "OK" if result["success"] else "FAIL"
-            original = result.get("original_ip", "N/A") or "N/A"
-            proxy = result.get("proxy_ip", "N/A") or "N/A"
-            name = result["name"][:29]
+        if has_speedtest:
+            # Include speedtest columns
+            print(f"\n{'Name':<30} {'Status':<8} {'Download':<12} {'Upload':<12} {'Ping':<10}")
+            print("-" * 72)
 
-            print(f"{name:<30} {status:<10} {original:<15} {proxy:<15}")
-            if result.get("error"):
-                print(f"  Error: {result['error']}")
+            for result in results:
+                status = "OK" if result["success"] else "FAIL"
+                name = result["name"][:29]
+
+                download = f"{result.get('download_mbps', 0):.1f} Mbps" if result.get('download_mbps') else "N/A"
+                upload = f"{result.get('upload_mbps', 0):.1f} Mbps" if result.get('upload_mbps') else "N/A"
+                ping = f"{result.get('ping_ms', 0):.1f} ms" if result.get('ping_ms') else "N/A"
+
+                print(f"{name:<30} {status:<8} {download:<12} {upload:<12} {ping:<10}")
+                if result.get("error"):
+                    print(f"  Error: {result['error']}")
+                if result.get("speedtest_error"):
+                    print(f"  Speedtest Error: {result['speedtest_error']}")
+        else:
+            # Original format without speedtest
+            print(f"\n{'Name':<30} {'Status':<10} {'Original IP':<15} {'Proxy IP':<15}")
+            print("-" * 70)
+
+            for result in results:
+                status = "OK" if result["success"] else "FAIL"
+                original = result.get("original_ip", "N/A") or "N/A"
+                proxy = result.get("proxy_ip", "N/A") or "N/A"
+                name = result["name"][:29]
+
+                print(f"{name:<30} {status:<10} {original:<15} {proxy:<15}")
+                if result.get("error"):
+                    print(f"  Error: {result['error']}")
 
 
 def parse_vless_link(link: str) -> Optional[VLESSConfig]:
@@ -703,6 +805,7 @@ Options:
   --file <file>            File containing VLESS links (any format - txt, json, etc.)
   --subscription <url>     Subscription URL (base64 encoded)
   --link <vless://...>     Single VLESS link to test
+  --speedtest              Run speedtest (download/upload/ping) for each connection
   --json                   Output results in JSON format for machine parsing
   --quiet                  Suppress info messages (useful with --json)
 
@@ -712,6 +815,7 @@ Examples:
   python vless_tester.py --subscription https://example.com/sub
   python vless_tester.py --link "vless://uuid@server:port?..."
   python vless_tester.py --file servers.json --json --quiet
+  python vless_tester.py --subscription https://example.com/sub --speedtest
 
 You can combine multiple sources:
   python vless_tester.py --file file1.txt --file file2.json --subscription https://sub.url
@@ -726,6 +830,7 @@ def main():
     # Parse command line arguments - first pass for flags
     json_output = False
     quiet = False
+    run_speedtest = False
     files = []
     subscriptions = []
     links = []
@@ -744,6 +849,10 @@ def main():
 
         elif arg == '--quiet':
             quiet = True
+            i += 1
+
+        elif arg == '--speedtest':
+            run_speedtest = True
             i += 1
 
         elif arg in ['--file', '--links-file', '-f']:
@@ -813,7 +922,7 @@ def main():
         print(f"\n[INFO] Loaded {len(configs)} VLESS configuration(s)")
 
     # Create tester instance
-    tester = VLESSTester(xray_path=xray_path, timeout=10, proxy_port=10808, quiet=quiet)
+    tester = VLESSTester(xray_path=xray_path, timeout=10, proxy_port=10808, quiet=quiet, run_speedtest=run_speedtest)
 
     # Run tests
     results = tester.test_multiple_connections(configs, json_output=json_output)
