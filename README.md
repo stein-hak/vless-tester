@@ -11,7 +11,7 @@ A comprehensive Python tool for testing VLESS proxy connections with support for
   - File-based bulk testing (extracts vless:// URIs from any file format)
   - Subscription URL support (base64-encoded)
 - **Automatic Xray Management**: Downloads and installs xray-core automatically
-- **IP Verification**: Confirms connection success by detecting IP changes
+- **Reliable IP Verification**: Uses multiple IP check services with automatic fallback for robust connectivity testing
 - **Multiple Output Formats**: Human-readable or JSON for automation
 - **Cross-Platform**: Works on Linux, macOS, and Windows
 
@@ -221,11 +221,13 @@ Server 2                       OK         1.2.3.4         9.10.11.12
 2. **Download Xray**: Automatically downloads the appropriate xray-core binary for your platform
 3. **Generate Config**: Creates xray configuration with proper transport settings
 4. **Test Connection**:
-   - Gets your original IP
+   - Gets your original IP using multiple services (icanhazip.com, ipify.org, checkip.amazonaws.com, etc.) with automatic fallback
    - Starts xray with the VLESS configuration
-   - Requests IP through the proxy
+   - Requests IP through the proxy using the same multi-service approach
    - Verifies IP has changed
 5. **Report Results**: Displays test results in chosen format
+
+The tool uses 6 different IP check services to ensure reliable testing even if some services are down or rate-limited.
 
 ## File Input Formats
 

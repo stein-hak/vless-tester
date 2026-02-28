@@ -193,6 +193,16 @@ class XrayDownloader:
 class VLESSTester:
     """Main class for testing VLESS connections"""
 
+    # Multiple IP check services for reliability
+    IP_CHECK_SERVICES = [
+        "http://icanhazip.com",
+        "http://api.ipify.org",
+        "http://checkip.amazonaws.com",
+        "http://ipecho.net/plain",
+        "http://ifconfig.me",
+        "http://ident.me"
+    ]
+
     def __init__(self, xray_path: str = None, timeout: int = 10, proxy_port: int = 10808, quiet: bool = False):
         self.xray_path = xray_path
         self.timeout = timeout
@@ -207,40 +217,45 @@ class VLESSTester:
             print(message)
 
     def get_current_ip(self) -> Optional[str]:
-        """Get current public IP address"""
-        try:
-            response = requests.get("http://ifconfig.me", timeout=self.timeout)
-            if response.status_code == 200:
-                ip = response.text.strip()
-                self.log(f"[INFO] Current IP: {ip}")
-                return ip
-            else:
-                self.log(f"[ERROR] Failed to get IP: HTTP {response.status_code}")
-                return None
-        except Exception as e:
-            self.log(f"[ERROR] Failed to get current IP: {e}")
-            return None
+        """Get current public IP address using multiple services with fallback"""
+        for service in self.IP_CHECK_SERVICES:
+            try:
+                response = requests.get(service, timeout=self.timeout)
+                if response.status_code == 200:
+                    ip = response.text.strip()
+                    self.log(f"[INFO] Current IP: {ip} (via {service})")
+                    return ip
+            except Exception as e:
+                # Try next service if this one fails
+                continue
+
+        # All services failed
+        self.log(f"[ERROR] Failed to get current IP from all services")
+        return None
 
     def get_ip_through_proxy(self) -> Optional[str]:
-        """Get IP address through the proxy"""
+        """Get IP address through the proxy using multiple services with fallback"""
         proxies = {
             'http': f'socks5://127.0.0.1:{self.proxy_port}',
             'https': f'socks5://127.0.0.1:{self.proxy_port}'
         }
-        try:
-            response = requests.get("http://ifconfig.me",
-                                  proxies=proxies,
-                                  timeout=self.timeout)
-            if response.status_code == 200:
-                ip = response.text.strip()
-                self.log(f"[INFO] Proxy IP: {ip}")
-                return ip
-            else:
-                self.log(f"[ERROR] Failed to get proxy IP: HTTP {response.status_code}")
-                return None
-        except Exception as e:
-            self.log(f"[ERROR] Failed to get IP through proxy: {e}")
-            return None
+
+        for service in self.IP_CHECK_SERVICES:
+            try:
+                response = requests.get(service,
+                                      proxies=proxies,
+                                      timeout=self.timeout)
+                if response.status_code == 200:
+                    ip = response.text.strip()
+                    self.log(f"[INFO] Proxy IP: {ip} (via {service})")
+                    return ip
+            except Exception as e:
+                # Try next service if this one fails
+                continue
+
+        # All services failed
+        self.log(f"[ERROR] Failed to get IP through proxy from all services")
+        return None
 
     def create_xray_config(self, vless_config: VLESSConfig) -> Dict:
         """Create xray configuration for VLESS connection"""
