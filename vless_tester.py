@@ -26,6 +26,13 @@ try:
 except ImportError:
     speedtest = None
 
+try:
+    import socks
+    import socket
+    HAS_SOCKS = True
+except ImportError:
+    HAS_SOCKS = False
+
 
 @dataclass
 class VLESSConfig:
@@ -277,12 +284,20 @@ class VLESSTester:
             self.log("[WARNING] speedtest-cli not installed, skipping speedtest")
             return result
 
+        if not HAS_SOCKS:
+            result["speedtest_error"] = "PySocks not installed (required for speedtest through proxy)"
+            self.log("[WARNING] PySocks not installed, skipping speedtest")
+            return result
+
+        # Save original socket
+        original_socket = socket.socket
+
         try:
             self.log("[INFO] Running speedtest through proxy...")
 
-            # Configure speedtest to use proxy
-            os.environ['http_proxy'] = f'socks5://127.0.0.1:{self.proxy_port}'
-            os.environ['https_proxy'] = f'socks5://127.0.0.1:{self.proxy_port}'
+            # Monkey-patch socket to use SOCKS5 proxy
+            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", self.proxy_port)
+            socket.socket = socks.socksocket
 
             # Create speedtest client
             st = speedtest.Speedtest()
@@ -306,21 +321,13 @@ class VLESSTester:
 
             self.log(f"[INFO] Speedtest results: ↓ {result['download_mbps']} Mbps, ↑ {result['upload_mbps']} Mbps, Ping: {result['ping_ms']} ms")
 
-            # Clean up proxy env vars
-            if 'http_proxy' in os.environ:
-                del os.environ['http_proxy']
-            if 'https_proxy' in os.environ:
-                del os.environ['https_proxy']
-
         except Exception as e:
             result["speedtest_error"] = str(e)
             self.log(f"[ERROR] Speedtest failed: {e}")
 
-            # Clean up proxy env vars on error
-            if 'http_proxy' in os.environ:
-                del os.environ['http_proxy']
-            if 'https_proxy' in os.environ:
-                del os.environ['https_proxy']
+        finally:
+            # Restore original socket
+            socket.socket = original_socket
 
         return result
 
