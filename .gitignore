@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Xray binary
+xray/
+
+# Test data and configs (may contain sensitive UUIDs/keys)
+test_servers.json
+*.json
+!requirements.txt
+
+# Temporary files
+*.tmp
+*.log
+/tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
