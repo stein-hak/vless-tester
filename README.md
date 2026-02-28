@@ -266,7 +266,10 @@ Server 3                       OK       156.2 Mbps   52.8 Mbps    12.0 ms
 }
 ```
 
-**Note**: Speedtest adds approximately 20-30 seconds per server for download and upload testing.
+**Notes**:
+- Speedtest adds approximately 20-30 seconds per server for download and upload testing
+- Speedtest.net may rate limit requests - if you see HTTP 403 errors, wait a few minutes before retrying
+- Testing many servers in quick succession may trigger temporary rate limits
 
 ## How It Works
 
@@ -375,6 +378,20 @@ venv\Scripts\activate     # Windows
 # Reinstall dependencies
 pip install -r requirements.txt
 ```
+
+### Speedtest HTTP 403 Errors
+
+**Problem**: `[ERROR] Speedtest failed: HTTP Error 403: Forbidden`
+
+**Cause**: Speedtest.net implements rate limiting to prevent abuse
+
+**Solutions**:
+- Wait 5-10 minutes before running speedtest again
+- Reduce the number of servers tested at once
+- Test servers in smaller batches with delays between batches
+- The connection test (IP change verification) still works - only speedtest is affected
+
+**Note**: This is expected behavior when testing many servers quickly. The rate limit typically clears after a short wait.
 
 ## Advanced Usage
 
