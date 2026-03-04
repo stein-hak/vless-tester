@@ -539,8 +539,14 @@ class VLESSTester:
                 result["error"] = "Failed to start xray"
                 return result
 
-            # Wait a bit more for connection to establish
-            time.sleep(3)
+            # Wait for connection to establish
+            # REALITY connections need more time for anti-censorship handshake
+            if vless_config.security == "reality":
+                wait_time = 6
+                self.log("[INFO] REALITY connection - waiting 6 seconds for handshake...")
+            else:
+                wait_time = 3
+            time.sleep(wait_time)
 
             # Get IP through proxy
             proxy_ip = self.get_ip_through_proxy()
